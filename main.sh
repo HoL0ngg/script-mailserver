@@ -3,6 +3,10 @@
 readonly PACKAGES=("bind" "bind-utils" "dovecot" "postfix" "epel-release" "squirrelmail")
 readonly EXTERNAL_LINK_EPEL_RELEASE="https://dl.fedoraproject.org/pub/archive/epel/7/x86_64/Packages/e/epel-release-7-14.noarch.rpm"
 
+check_network_connection() {
+	ping -c 1 8.8.8.8 &> /dev/null
+}
+
 #Kiểm tra trạng thái cài đặt package
 is_installed() {
 	local pkg=$1
@@ -31,24 +35,33 @@ check_packages_installed() {
 #Cài đặt package
 install_package() {
 	local pkg=$1
+	local status=0
 	if ! is_installed "$pkg"; then
 		echo "[Installing] Đang cài đặt $pkg..."
 		yum -y install "$pkg" &> /dev/null
-
+		status=$?
 		#Nếu không cài được epel-release thì phải cài qua URL trực tiếp
-		if [[ $? -ne 0 && "$pkg" == "epel-release" ]]; then
+		if [[ $status -ne 0 && "$pkg" == "epel-release" ]]; then
 			yum -y install "$EXTERNAL_LINK_EPEL_RELEASE" &> /dev/null
+			status=$?
 		fi
 	fi
-	
-	if [ $? -ne 0 ]; then
+	if [ $status -ne 0 ]; then
 		echo "[Error] Lỗi khi cài đặt $pkg."
+		return 1
 	fi
+	return 0;
 }
 
 #Cài đặt tất cả packages
 install_all_packages() {
 	echo "============ Quá trình cài đặt các gói tin ============"
+	if ! check_network_connection; then
+		echo "[Error] Lỗi kết nối mạng."
+		echo "[Info] Vui lòng kiểm tra kết nối mạng để tiến hành cài đặt."
+		echo "======================================================="
+		return 1
+	fi
 	local ERROR_PACKAGES=()
 	for pkg in "${PACKAGES[@]}"; do
 		if ! install_package "$pkg"; then
@@ -57,7 +70,7 @@ install_all_packages() {
 	done
 	if [ "${#ERROR_PACKAGES[@]}" -ne 0 ]; then
 		echo "=== Tổng kết lỗi khi cài đặt ==="
-		for pkg in "${PACKAGES[@]}"; do
+		for pkg in "${ERROR_PACKAGES[@]}"; do
 			echo "[Error] $pkg có lỗi khi cài đặt."
 		done
 	else
