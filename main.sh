@@ -32,14 +32,14 @@ check_packages_installed() {
 	local MISSING_PACKAGES=();
 	for pkg in "${PACKAGES[@]}"; do
 		if is_installed "$pkg"; then
-			echo "[installed] $pkg đã được cài đặt"
+			echo "[INSTALLED] $pkg đã được cài đặt"
 		else
 			MISSING_PACKAGES+=("$pkg")
 		fi
 	done
 	
 	for pkg in "${MISSING_PACKAGES[@]}"; do
-		echo "[not installed] $pkg chưa được cài đặt"
+		echo "[NOT INSTALLED] $pkg chưa được cài đặt"
 	done
 	echo "===================================================="
 }
@@ -49,7 +49,7 @@ install_package() {
 	local pkg=$1
 	local status=0
 	if ! is_installed "$pkg"; then
-		echo "[installing] Đang cài đặt $pkg..."
+		echo "[INSTALLING] Đang cài đặt $pkg..."
 		yum -y install "$pkg" &> /dev/null
 		status=$?
 		#Nếu không cài được epel-release thì phải cài qua URL trực tiếp
@@ -59,7 +59,7 @@ install_package() {
 		fi
 	fi
 	if [ $status -ne 0 ]; then
-		echo "[error] Lỗi khi cài đặt $pkg."
+		echo "[ERROR] Lỗi khi cài đặt $pkg."
 		return 1
 	fi
 	return 0;
@@ -69,8 +69,8 @@ install_package() {
 install_all_packages() {
 	echo "============ Quá trình cài đặt các gói tin ============"
 	if ! check_network_connection; then
-		echo "[error] Lỗi kết nối mạng."
-		echo "[info] Vui lòng kiểm tra kết nối mạng để tiến hành cài đặt."
+		echo "[ERROR] Lỗi kết nối mạng."
+		echo "[INFO] Vui lòng kiểm tra kết nối mạng để tiến hành cài đặt."
 		echo "======================================================="
 		return 1
 	fi
@@ -83,10 +83,10 @@ install_all_packages() {
 	if [ "${#ERROR_PACKAGES[@]}" -ne 0 ]; then
 		echo "=== Tổng kết lỗi khi cài đặt ==="
 		for pkg in "${ERROR_PACKAGES[@]}"; do
-			echo "[error] $pkg có lỗi khi cài đặt."
+			echo "[ERROR] $pkg có lỗi khi cài đặt."
 		done
 	else
-		echo "[success] Các gói tin đã được cài đặt thành công!"
+		echo "[SUCCESS] Các gói tin đã được cài đặt thành công!"
 	fi
 	echo "======================================================="
 }
@@ -118,7 +118,7 @@ menu_install() {
 				;;
 			
 			*)
-				echo "[error] Vui lòng chọn 0-2."
+				echo "[ERROR] Vui lòng chọn 0-2."
 				pause
 				;;
 		esac
@@ -151,7 +151,7 @@ config_postfix() {
 	readonly POSTFIX_FILE
 	backup_file "${POSTFIX_FILE}"
 
-	echo "[configuring] Đang cấu hình postfix"
+	echo "[CONFIGURING] Đang cấu hình postfix"
 	append_config "${POSTFIX_FILE}" "myhostname" "server.sgu.edu.vn"
 	append_config "${POSTFIX_FILE}" "mydomain" "sgu.edu.vn"
 	append_config "${POSTFIX_FILE}" "myorigin" "\$mydomain"
@@ -179,7 +179,7 @@ config_dovecot() {
 	readonly DOVECOT_FILE MAIL_FILE AUTH_FILE MASTER_FILE
 	local WS="[[:space:]]"
 
-	echo "[configuring] Đang cấu hình dovecot"
+	echo "[CONFIGURING] Đang cấu hình dovecot"
 	append_config "${DOVECOT_FILE}" "protocols" "imap pop3 lmtp"
 	append_config "${MAIL_FILE}" "mail_location" "maildir:~/Maildir"
 	append_config "${AUTH_FILE}" "disable_plaintext_auth" "yes"
@@ -203,20 +203,24 @@ config_httpd() {
 	readonly HTTPD_FILE
 	backup_file "${HTTPD_FILE}"
 
-	echo "[configuring] Đang cấu hình httpd"
+	echo "[CONFIGURING] Đang cấu hình httpd"
 	if ! grep -Fxq "Alias /webmail /usr/share/squirrelmail" "${HTTPD_FILE}"; then
-		echo >> "Alias /webmail /usr/share/squirrelmail" 	${HTTPD_FILE}
-		echo >> "<Directory /usr/share/squirrelmail>"		${HTTPD_FILE}
-		echo >>		"Options Indexes FollowSymLinks"		${HTTPD_FILE}
-		echo >>		"RewriteEngine On"						${HTTPD_FILE}
-		echo >>		"AllowOverride All"						${HTTPD_FILE}
-		echo >>		"DirectoryIndex index.php"				${HTTPD_FILE}
-		echo >>		"Order allow,deny"						${HTTPD_FILE}
-		echo >>		"Allow from all"						${HTTPD_FILE}
-		echo >> "</Directory>"								${HTTPD_FILE}
+		echo "Alias /webmail /usr/share/squirrelmail"	>>	"${HTTPD_FILE}"
+		echo "<Directory /usr/share/squirrelmail>"		>>	"${HTTPD_FILE}"
+		echo 	"Options Indexes FollowSymLinks"		>>	"${HTTPD_FILE}"
+		echo 	"RewriteEngine On"						>>	"${HTTPD_FILE}"
+		echo 	"AllowOverride All"						>>	"${HTTPD_FILE}"
+		echo 	"DirectoryIndex index.php"				>>	"${HTTPD_FILE}"
+		echo 	"Order allow,deny"						>>	"${HTTPD_FILE}"
+		echo 	"Allow from all"						>>	"${HTTPD_FILE}"
+		echo "</Directory>"								>>	"${HTTPD_FILE}"
 	fi
 }
 restart_services() {
+	echo "[CONFIGURING] Đang khởi động lại các dịch vụ"
+	systemctl start firewalld &> /dev/null
+	firewall-cmd --permanent --add-port=80/tcp &> /dev/null
+	firewall-cmd --reload &> /dev/null
 	systemctl restart postfix &> /dev/null
 	systemctl restart dovecot &> /dev/null
 	systemctl restart httpd &> /dev/null
@@ -225,8 +229,8 @@ restart_services() {
 config_mailserver() {
 	echo "=========== Quá trình cấu hình Mail Server ==========="
 	if ! is_all_installed; then
-		echo "[error] Một số gói tin cần thiết chưa được cài đặt!"
-		echo "[info] Vui lòng sử dụng chức năng \"1. Cài đặt\"."
+		echo "[ERROR] Một số gói tin cần thiết chưa được cài đặt!"
+		echo "[INFO] Vui lòng sử dụng chức năng \"1. Cài đặt\"."
 		echo "====================================================="
 		return 1
 	fi
@@ -234,7 +238,7 @@ config_mailserver() {
 	config_dovecot
 	config_httpd
 	restart_services
-	echo "[success] Đã hoàn tất cấu hình Mail Server"
+	echo "[SUCCESS] Đã hoàn tất cấu hình Mail Server"
 	echo "====================================================="
 }
 
@@ -271,7 +275,7 @@ menu_main() {
 				;;
 			
 			*)
-				echo "[Error] Vui lòng chọn 0-2."
+				echo "[ERROR] Vui lòng chọn 0-2."
 				pause
 				;;
 		esac
