@@ -143,8 +143,14 @@ setup_dns_server() {
 create_forward_zone() {
   echo "=== Tạo Forward Zone mới ==="
   while true; do
-    read -p "Nhập domain (vd: example.com): " DOMAIN
+    read -p "Nhập domain (VD: example.com): " DOMAIN
     [ -z "$DOMAIN" ] && echo "Domain không được rỗng." && continue
+    if ! validate_domain "${DOMAIN}"; then
+	    echo "[ERROR] DOMAIN không hợp lệ!"
+	    echo "[INFO]  DOMAIN phải theo định dạng (VD: example.com)."
+	continue;
+    fi
+
     if grep -q "zone \"$DOMAIN\"" "$NAMED_ZONES"; then
       echo "Zone $DOMAIN đã tồn tại, vui lòng nhập domain khác."
     else
@@ -282,7 +288,7 @@ add_dns_record() {
   FORWARD_ZONE_FILE="$ZONE_DIR/forward.${DOMAIN}"
 
   echo "Bạn đang thêm record cho zone: $DOMAIN"
-  read -p "Nhập hostname (vd: www, để trống = domain chính): " HOST
+  read -p "Nhập hostname (VD: www, để trống = domain chính): " HOST
   read -p "Nhập IP cho ${HOST:+$HOST.}$DOMAIN: " IP
   while ! validate_ip "$IP"; do
     error "IP không hợp lệ, vui lòng nhập lại!"
@@ -489,7 +495,7 @@ install_all_packages() {
 	echo "============ Quá trình cài đặt các gói tin ============"
 	if ! check_network_connection; then
 		echo "[ERROR] Lỗi kết nối mạng."
-		echo "[INFO] Vui lòng kiểm tra kết nối mạng để tiến hành cài đặt."
+		echo "[INFO]  Vui lòng kiểm tra kết nối mạng để tiến hành cài đặt."
 		echo "======================================================="
 		return 1
 	fi
@@ -565,23 +571,89 @@ backup_file() {
 	fi
 }
 
+# Hàm kiểm tra hostname hợp lệ (FQDN)
+validate_hostname() {
+    local HOSTNAME="$1"
+
+    if [[ "${HOSTNAME}" =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Hàm kiểm tra domain hợp lệ
+validate_domain() {
+    local DOMAIN="$1"
+
+    if [[ "${DOMAIN}" =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Hàm kiểm tra hostname có bản ghi DNS không
+check_hostname_dns() {
+	local HOSTNAME="$1"
+	local result
+
+	dig +short +time=1 +tries=1 "${HOSTNAME}" > /dev/null
+	return $?
+}
+
+config_squirrelmail() {
+	local DOMAIN=$1
+	local CONFIG_FILE="/etc/squirrelmail/config.php"
+	readonly CONFIG_FILE DOMAIN
+	sed -i "s|^\$domain\s*=.*|\$domain = \'${DOMAIN}\';|" "${CONFIG_FILE}"
+}
+
 config_postfix() {
 	local POSTFIX_FILE="/etc/postfix/main.cf"
 	readonly POSTFIX_FILE
 	backup_file "${POSTFIX_FILE}"
 	
-	read -p "Nhập hostname: " HOSTNAME
-	read -p "Nhập domain name: " DOMAIN_NAME
+	while true; do
+		read -rp "Nhập hostname (VD: server.example.com): " HOSTNAME
+		if ! validate_hostname "${HOSTNAME}"; then
+			echo "[ERROR] hostname không hợp lệ!"
+			echo "[INFO]  hostname phải theo định dạng (VD: server.example.com)"
+			continue
+		fi
 
+		if ! check_hostname_dns "${HOSTNAME}"; then
+			echo "[ERROR] ${HOSTNAME} KHÔNG có bản ghi DNS!"
+			echo "[INFO]  Hãy chắc chắn rằng ${HOSTNAME} có bản ghi trỏ về IP của server này."
+			continue
+		fi
+		break;
+		
+	done
+
+	while true; do
+		read -rp "Nhập domain (VD: example.com): " DOMAIN
+		if ! validate_domain "${DOMAIN}"; then
+			echo "[ERROR] DOMAIN không hợp lệ!"
+			echo "[INFO]  DOMAIN phải theo định dạng (VD: example.com)"
+			continue
+		fi
+		break;
+	done
+
+	
 	echo "[CONFIGURING] Đang cấu hình postfix"
 	postconf -e "myhostname = ${HOSTNAME}"
-	postconf -e "mydomain = ${DOMAIN_NAME}"
+	postconf -e "mydomain = ${DOMAIN}"
 	postconf -e "myorigin = \$mydomain"
 	postconf -e "inet_interfaces = all"
 	postconf -e "inet_protocols = all"
 	postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
 	postconf -e "mynetworks = 192.168.1.0/24, 127.0.0.0/8"
 	postconf -e "home_mailbox = Maildir/"
+	
+	echo "[CONFIGURING] Đang cấu hình squirrelmail"
+	config_squirrelmail "${DOMAIN}"
 
 	systemctl enable postfix &> /dev/null
 	systemctl start postfix &> /dev/null
@@ -657,7 +729,7 @@ config_mailserver() {
 	echo "=========== Quá trình cấu hình Mail Server ==========="
 	if ! is_all_installed; then
 		echo "[ERROR] Một số gói tin cần thiết chưa được cài đặt!"
-		echo "[INFO] Vui lòng sử dụng chức năng \"1. Cài đặt\"."
+		echo "[INFO]  Vui lòng sử dụng chức năng \"1. Cài đặt\"."
 		echo "====================================================="
 		return 1
 	fi
