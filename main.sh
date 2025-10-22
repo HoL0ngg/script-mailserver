@@ -615,10 +615,14 @@ install_all_packages() {
 		for pkg in "${ERROR_PACKAGES[@]}"; do
 			echo "[ERROR] $pkg có lỗi khi cài đặt."
 		done
+		echo "======================================================="
+		echo "[INFO] Vui lòng kiểm tra các files trong /etc/yum.repos.d, đường dẫn \"mirrorlist.centos.org\" không còn được sử dụng."
+		echo "[INFO] Gợi ý chuyển sang đường dẫn \"vault.centos.org\."
+		echo "[INFO] Bạn có thể tìm kiếm \"mirrorlist.centos.org no longer resolve?\" trên Internet."
 	else
 		echo "[SUCCESS] Các gói tin đã được cài đặt thành công!"
+		echo "======================================================="
 	fi
-	echo "======================================================="
 }
 
 #Menu cho chuc nang 1 - Cai Dat
@@ -823,6 +827,8 @@ restart_services() {
 	systemctl restart postfix &> /dev/null
 	systemctl restart dovecot &> /dev/null
 	systemctl restart httpd &> /dev/null
+	/usr/sbin/setsebool httpd_can_network_connect=1
+	setsebool -P httpd_can_sendmail=1
 }
 
 config_mailserver() {
@@ -843,8 +849,54 @@ config_mailserver() {
 	config_dovecot
 	config_httpd
 	restart_services
-	echo "[SUCCESS] Đã hoàn tất cấu hình Mail Server"
+
+	local DOMAIN=$(postconf mydomain 2>/dev/null | awk '{print $3}')
+	if [ -z "${DOMAIN}" ]; then
+		echo "[ERROR] Không tìm thấy domain trong Postfix!"
+		echo "[INFO]  Vui lòng cấu hình lại và chú ý các thông báo."
+	else
+		echo "[SUCCESS] Đã hoàn tất cấu hình Mail Server"
+		echo "[INFO] Bạn có thể truy cập vào \"${DOMAIN}/webmail\" để gửi/nhận mail"
+
+	fi
+	
 	echo "====================================================="
+}
+
+create_user() {
+	read -rp "Nhập username: " USERNAME
+
+	if [[ -z "${USERNAME}" ]]; then
+		echo "[ERROR] Username không được để trống!"
+		return 1
+	fi
+
+	if id "${USERNAME}" &>/dev/null; then
+		echo "[ERROR] User ${USERNAME} đã tồn tại!"
+		return 1
+	fi
+
+	useradd "${USERNAME}" &> /dev/null
+
+	if [[ $? -ne 0 ]]; then
+		echo "[ERROR] Tạo user thất bại!"
+		return 1
+	fi
+	
+	
+	while true; do
+		read -rsp "Nhập mật khẩu cho user: " PASSWORD
+		echo
+		read -rsp "Xác nhận mật khẩu: " PASSWORD2
+		echo
+		if [[ "${PASSWORD}" != "${PASSWORD2}" ]]; then
+			echo "[ERROR] Mật khẩu không khớp!"
+			continue
+		fi
+		break
+	done
+	echo "${USERNAME}:${PASSWD}" | chpasswd
+	echo "User ${USERNAME} đã được tạo thành công!"
 }
 
 #Menu chinh
@@ -862,9 +914,10 @@ menu_main() {
 		echo "1) Cài đặt."
 		echo "2) Cấu hình DNS Server."
 		echo "3) Cấu hình Mail Server."
+		echo "4) Tạo user."
 		echo "0) Thoát."
 		echo "======================================"
-		echo -n "Nhập lựa chọn [0-3]: "
+		echo -n "Nhập lựa chọn [0-4]: "
 		read choice
 		clear
 		case "$choice" in
@@ -878,14 +931,17 @@ menu_main() {
 				config_mailserver
 				pause
 				;;
-			
+			4)
+				create_user
+				pause
+				;;
 			0)
 				echo "Đã thoát chương trình!"
 				exit 0
 				;;
 			
 			*)
-				echo "[ERROR] Vui lòng chọn 0-3."
+				echo "[ERROR] Vui lòng chọn 0-4."
 				pause
 				;;
 		esac
