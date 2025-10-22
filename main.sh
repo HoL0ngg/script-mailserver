@@ -471,6 +471,7 @@ add_forwarder_ip() {
         }
         { print }
         ' "$NAMED_CONF" > /tmp/named.conf.tmp && mv /tmp/named.conf.tmp "$NAMED_CONF"
+		systemctl restart named
         echo "[SUCCESS] Đã thêm IP ${NEW_IP} vào forwarders."
     fi
 }
@@ -478,11 +479,18 @@ add_forwarder_ip() {
 # Hàm tạo block forwarders nếu chưa có
 create_forwarders_block() {
 	local new_ip=$1
-	echo "" >> "$NAMED_CONF"
-	echo "forwarders {" >> "$NAMED_CONF"
-	echo "    ${new_ip};" >> "$NAMED_CONF"
-	echo "};" >> "$NAMED_CONF"
-        echo "[SUCCESS] Đã thêm IP ${new_ip} vào forwarders."
+	awk -v ip="${new_ip}" '
+	/options[[:space:]]*\{/ {
+	print
+	print "    forwarders { " ip "; };"
+	next
+	}
+	{ print }
+	' "${NAMED_CONF}" > "${NAMED_CONF}.tmp"
+
+	mv "${NAMED_CONF}.tmp" "${NAMED_CONF}"
+	systemctl restart named
+    echo "[SUCCESS] Đã thêm IP ${new_ip} vào forwarders."
 }
 
 add_forwarder() {
@@ -611,7 +619,7 @@ install_all_packages() {
 		fi
 	done
 	if [ "${#ERROR_PACKAGES[@]}" -ne 0 ]; then
-		echo "=== Tổng kết lỗi khi cài đặt ==="
+		echo "======= Tổng kết lỗi khi cài đặt ======="
 		for pkg in "${ERROR_PACKAGES[@]}"; do
 			echo "[ERROR] $pkg có lỗi khi cài đặt."
 		done
@@ -822,6 +830,7 @@ restart_services() {
 	echo "[CONFIGURING] Đang khởi động lại các dịch vụ"
 	systemctl start firewalld &> /dev/null
 	firewall-cmd --permanent --add-port=80/tcp &> /dev/null
+	firewall-cmd --permanent --add-port=25/tcp &> /dev/null
 	firewall-cmd --reload &> /dev/null
 	systemctl restart named &> /dev/null
 	systemctl restart postfix &> /dev/null
