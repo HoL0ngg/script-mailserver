@@ -6,6 +6,10 @@ readonly EXTERNAL_LINK_EPEL_RELEASE="https://dl.fedoraproject.org/pub/archive/ep
 pause() {
 	read -p "Nhấn Enter để quay lại menu..."
 }
+
+pause2() {
+	read -p "Nhấn Enter để tiếp tục..."
+}
 check_network_connection() {
 	ping -c 1 8.8.8.8 &> /dev/null
 }
@@ -136,7 +140,6 @@ setup_dns_server() {
 	
 	success "Cài đặt DNS server hoàn tất! Bạn có thể tiến hành tạo zone."
   echo
-  read -p "Nhấn Enter để tiếp tục..."
 }
 
 # ========== Zone & Record ==========
@@ -195,7 +198,6 @@ EOF
 
   systemctl restart named
   success "Zone $DOMAIN đã được tạo và dịch vụ named đã restart."
-  pause
 }
 
 create_reverse_zone_if_needed() {
@@ -353,7 +355,6 @@ list_zones() {
     fi
 
     echo
-    read -p "Nhấn Enter để tiếp tục..."
 }
 
 list_records() {
@@ -404,35 +405,138 @@ list_records() {
   else
       error "Không tìm thấy file zone: $FORWARD_ZONE_FILE"
   fi
-
-  pause
 }
 
+# Hàm chuẩn hoá block forwarders 1 dòng thành nhiều dòng
+normalize_forwarders_block() {
+    if grep -qE 'forwarders[[:space:]]*\{.*\};' "$NAMED_CONF"; then
+        awk '
+        {
+            # Nếu là block forwarders trên 1 dòng
+            if ($0 ~ /forwarders[[:space:]]*\{.*\};/) {
+                # Lấy phần trong { ... }
+                match($0, /forwarders[[:space:]]*\{(.*)\};/, arr)
+                ips=arr[1]
+                print "forwarders {"
+                n = split(ips, ip_array, ";")
+                for (i = 1; i <= n; i++) {
+                    ip = ip_array[i]
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", ip)  # trim
+                    if (ip != "") {
+                        print "    " ip ";"
+                    }
+                }
+                print "};"
+            } else {
+                print $0
+            }
+        }
+        ' "$NAMED_CONF" > /tmp/named.conf.tmp && mv /tmp/named.conf.tmp "$NAMED_CONF"
+    fi
+}
+
+# Hàm lấy danh sách IP trong block forwarders
+get_existing_forwarders() {
+    awk '
+    /forwarders[[:space:]]*\{/ { in_block=1; next }
+    in_block && /\}/ { in_block=0; next }
+    in_block { gsub(/[[:space:];]/, "", $0); print }
+    ' "$NAMED_CONF"
+}
+
+# Hàm thêm IP mới vào forwarders nếu chưa có
+add_forwarder_ip() {
+    local new_ip=$1
+    local exists=0
+
+    # Lấy danh sách IP đã có
+    existing_ips=$(get_existing_forwarders)
+
+    for ip in $existing_ips; do
+        if [ "$ip" == "$new_ip" ]; then
+            exists=1
+            break
+        fi
+    done
+
+    if [ "$exists" -eq 1 ]; then
+        echo "[INFO] IP $new_ip đã tồn tại trong forwarders."
+    else
+        # Thêm IP trước dòng chứa }
+        awk -v ip="$new_ip" '
+        /forwarders[[:space:]]*\{/ { in_block=1; print; next }
+        in_block && /\}/ {
+            printf "    %s;\n", ip
+            in_block=0
+        }
+        { print }
+        ' "$NAMED_CONF" > /tmp/named.conf.tmp && mv /tmp/named.conf.tmp "$NAMED_CONF"
+        echo "[SUCCESS] Đã thêm IP ${NEW_IP} vào forwarders."
+    fi
+}
+
+# Hàm tạo block forwarders nếu chưa có
+create_forwarders_block() {
+	local new_ip=$1
+	echo "" >> "$NAMED_CONF"
+	echo "forwarders {" >> "$NAMED_CONF"
+	echo "    ${new_ip};" >> "$NAMED_CONF"
+	echo "};" >> "$NAMED_CONF"
+        echo "[SUCCESS] Đã thêm IP ${new_ip} vào forwarders."
+}
+
+add_forwarder() {
+	read -rp "Nhập IP forwarder cần thêm: " NEW_IP
+
+	if ! validate_ip "${NEW_IP}"; then
+		echo "[ERROR] IP không hợp lệ."
+		return 1
+	fi
+
+	if grep -q "forwarders[[:space:]]*{" "${NAMED_CONF}"; then
+		normalize_forwarders_block
+		add_forwarder_ip "${NEW_IP}"
+	else
+		create_forwarders_block "${NEW_IP}"
+	fi
+}
 # ========== Menu set up dns==========
 show_menu_setup_dns() {
 	clear
+	echo "==================== MENU_CẤU_HÌNH_DNS ===================="
 	echo -e "1) Cài đặt và cấu hình DNS Server."
 	echo -e "2) Tạo Forward Zone mới."
 	echo -e "3) Kiểm tra trạng thái DNS."
 	echo -e "4) Xem danh sách Zones."
 	echo -e "5) Xem Records của Zone."
+	echo -e "6) Thêm địa chỉ IP vào forwarders."
 	echo -e "0) Thoát."
+	echo "==========================================================="
 }
 
 menu_setup_dns() {
-  while true; do
-    show_menu_setup_dns
-    read -p "Chọn chức năng [0-5]: " choice
-    case $choice in
-      1) setup_dns_server ;;
-      2) create_forward_zone ;;
-      3) systemctl status named --no-pager ; pause ;;
-      4) list_zones ;;
-      5) list_records ;;
-      0) break ;;
-      *) error "Lựa chọn không hợp lệ!"; pause ;;
-    esac
-  done
+	echo "==================== MENU_CẤU_HÌNH_DNS ===================="
+	# ===== Kiểm tra trạng thái cài đặt các gói tin =====
+	if ! is_all_installed; then
+		echo "[ERROR] Một số gói tin cần thiết chưa được cài đặt!"
+		echo "[INFO]  Vui lòng sử dụng chức năng \"1. Cài đặt\"."
+		echo "==========================================================="
+		return 1
+	fi
+	while true; do
+		show_menu_setup_dns
+		read -p "Chọn chức năng [0-6]: " choice
+		case $choice in
+			1) setup_dns_server ; pause2 ;;
+			2) create_forward_zone ; pause2 ;;
+			3) systemctl status named --no-pager ; pause2 ;;
+			4) list_zones ; pause2 ;;
+			5) list_records ; pause2 ;;
+			6) add_forwarder ; pause2 ;;
+			0) break ;;
+			*) error "Lựa chọn không hợp lệ!"; pause2 ;;
+		esac
+	done
 }
 
 #Kiểm tra trạng thái cài đặt package
@@ -571,15 +675,9 @@ backup_file() {
 	fi
 }
 
-# Hàm kiểm tra hostname hợp lệ (FQDN)
-validate_hostname() {
-    local HOSTNAME="$1"
-
-    if [[ "${HOSTNAME}" =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; then
-        return 0
-    else
-        return 1
-    fi
+# ===== Function: Lấy IP từ DNS =====
+resolve_ip() {
+	dig +short +time=1 +tries=1 "$1" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1
 }
 
 # Hàm kiểm tra domain hợp lệ
@@ -591,15 +689,6 @@ validate_domain() {
     else
         return 1
     fi
-}
-
-# Hàm kiểm tra hostname có bản ghi DNS không
-check_hostname_dns() {
-	local HOSTNAME="$1"
-	local result
-
-	dig +short +time=1 +tries=1 "${HOSTNAME}" > /dev/null
-	return $?
 }
 
 config_squirrelmail() {
@@ -614,35 +703,45 @@ config_postfix() {
 	readonly POSTFIX_FILE
 	backup_file "${POSTFIX_FILE}"
 	
-	while true; do
-		read -rp "Nhập hostname (VD: server.example.com): " HOSTNAME
-		if ! validate_hostname "${HOSTNAME}"; then
-			echo "[ERROR] hostname không hợp lệ!"
-			echo "[INFO]  hostname phải theo định dạng (VD: server.example.com)"
-			continue
-		fi
+	read -rp "Nhập hostname (VD: server.example.com): " HOSTNAME
+	if ! validate_domain "${HOSTNAME}"; then
+		echo "[ERROR] hostname không hợp lệ!"
+		echo "[INFO]  hostname phải theo định dạng (VD: server.example.com)"
+		return 1
+	fi
 
-		if ! check_hostname_dns "${HOSTNAME}"; then
-			echo "[ERROR] ${HOSTNAME} KHÔNG có bản ghi DNS!"
-			echo "[INFO]  Hãy chắc chắn rằng ${HOSTNAME} có bản ghi trỏ về IP của server này."
-			continue
-		fi
-		break;
-		
-	done
+	read -rp "Nhập domain (VD: example.com): " DOMAIN
+	if ! validate_domain "${DOMAIN}"; then
+		echo "[ERROR] DOMAIN không hợp lệ!"
+		echo "[INFO]  DOMAIN phải theo định dạng (VD: example.com)"
+		return 1
+	fi
 
-	while true; do
-		read -rp "Nhập domain (VD: example.com): " DOMAIN
-		if ! validate_domain "${DOMAIN}"; then
-			echo "[ERROR] DOMAIN không hợp lệ!"
-			echo "[INFO]  DOMAIN phải theo định dạng (VD: example.com)"
-			continue
-		fi
-		break;
-	done
-
+	echo "[INFO] Đang kiểm tra DNS..."
+	local HOSTNAME_IP=$(resolve_ip "${HOSTNAME}")
+	local DOMAIN_IP=$(resolve_ip "${DOMAIN}")
 	
-	echo "[CONFIGURING] Đang cấu hình postfix"
+	if [[ -z "${HOSTNAME_IP}" ]]; then
+		echo ""
+		echo "[ERROR] Hostname ${HOSTNAME} không có bản ghi DNS hoặc không trỏ tới IP của Mail Server!"
+		echo "[INFO]  Hãy đảm bảo ${HOSTNAME} có bản ghi trỏ về IP của Mail Server này."
+		return 1
+	fi
+	
+	if [[ -z "${DOMAIN_IP}" ]]; then
+		echo ""
+		echo "[ERROR] Domain ${DOMAIN} không có bản ghi DNS hoặc không trỏ tới IP của Mail Server!"
+		echo "[INFO]  Hãy đảm bảo ${DOMAIN} có bản ghi trỏ về IP của Mail Server này."
+		return 1
+	fi
+	echo "[SUCCESS] Kiểm tra DNS thành công!"
+	echo ""
+	echo "${HOSTNAME} -> ${HOSTNAME_IP}"
+	echo "${DOMAIN} -> ${DOMAIN_IP}"
+	echo ""
+	echo "[ATTENTION] Hãy đảm bảo IP của hostname và domain trỏ về IP của Mail Server này!"
+	echo ""
+	echo "[CONFIGURING] Đang cấu hình postfix..."
 	postconf -e "myhostname = ${HOSTNAME}"
 	postconf -e "mydomain = ${DOMAIN}"
 	postconf -e "myorigin = \$mydomain"
@@ -651,12 +750,12 @@ config_postfix() {
 	postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
 	postconf -e "mynetworks = 192.168.1.0/24, 127.0.0.0/8"
 	postconf -e "home_mailbox = Maildir/"
-	
-	echo "[CONFIGURING] Đang cấu hình squirrelmail"
+
 	config_squirrelmail "${DOMAIN}"
 
 	systemctl enable postfix &> /dev/null
 	systemctl start postfix &> /dev/null
+	return 0
 }
 
 config_dovecot() {
@@ -673,7 +772,7 @@ config_dovecot() {
 	readonly DOVECOT_FILE MAIL_FILE AUTH_FILE MASTER_FILE
 	local WS="[[:space:]]"
 
-	echo "[CONFIGURING] Đang cấu hình dovecot"
+	echo "[CONFIGURING] Đang cấu hình dovecot..."
 	append_config "${DOVECOT_FILE}" "protocols" "imap pop3 lmtp"
 	append_config "${MAIL_FILE}" "mail_location" "maildir:~/Maildir"
 	append_config "${AUTH_FILE}" "disable_plaintext_auth" "yes"
@@ -697,7 +796,7 @@ config_httpd() {
 	readonly HTTPD_FILE
 	backup_file "${HTTPD_FILE}"
 
-	echo "[CONFIGURING] Đang cấu hình httpd"
+	echo "[CONFIGURING] Đang cấu hình httpd..."
 	if ! grep -Fxq "Alias /webmail /usr/share/squirrelmail" "${HTTPD_FILE}"; then
 		echo "Alias /webmail /usr/share/squirrelmail"	>>	"${HTTPD_FILE}"
 		echo "<Directory /usr/share/squirrelmail>"		>>	"${HTTPD_FILE}"
@@ -727,13 +826,19 @@ restart_services() {
 
 config_mailserver() {
 	echo "=========== Quá trình cấu hình Mail Server ==========="
+	# ===== Kiểm tra trạng thái cài đặt các gói tin =====
 	if ! is_all_installed; then
 		echo "[ERROR] Một số gói tin cần thiết chưa được cài đặt!"
 		echo "[INFO]  Vui lòng sử dụng chức năng \"1. Cài đặt\"."
 		echo "====================================================="
 		return 1
 	fi
-	config_postfix
+	
+	echo "[ATTENTION] Hãy đảm bảo Mail Server sử dụng IP tĩnh trước khi cấu hình Mail Server!"
+	echo ""
+	if ! config_postfix; then
+		return 1
+	fi
 	config_dovecot
 	config_httpd
 	restart_services
@@ -778,7 +883,7 @@ menu_main() {
 				;;
 			
 			*)
-				echo "[ERROR] Vui lòng chọn 0-2."
+				echo "[ERROR] Vui lòng chọn 0-3."
 				pause
 				;;
 		esac
