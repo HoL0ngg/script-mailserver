@@ -521,6 +521,7 @@ menu_setup_dns() {
 		echo "[ERROR] Một số gói tin cần thiết chưa được cài đặt!"
 		echo "[INFO]  Vui lòng sử dụng chức năng \"1. Cài đặt\"."
 		echo "==========================================================="
+		pause
 		return 1
 	fi
 	while true; do
@@ -854,6 +855,7 @@ menu_main() {
 		exit 1
 	fi
 
+	sed -i "s|^SELINUX[[:space:]]*=.*|SELINUX=disabled|" "/etc/sysconfig/selinux"
 	while true; do
 		clear
 		echo "================ MENU ================"
