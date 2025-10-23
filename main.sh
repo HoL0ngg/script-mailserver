@@ -64,7 +64,9 @@ configure_ip_and_named() {
     INTERFACE=${INTERFACE:-ens33}
     # log "Interface hiện tại: $INTERFACE"
 
-    CON_NAME=$(nmcli -t -f NAME,DEVICE connection show | grep "$INTERFACE" | cut -d: -f1)
+#   CON_NAME=$(nmcli -t -f NAME,DEVICE connection show | grep "$INTERFACE" | cut -d: -f1)
+    CON_NAME=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v ifc="${INTERFACE}" '$2==ifc {print $1; exit}')
+
     if [ -z "$CON_NAME" ]; then
         log "Không tìm thấy connection cho interface $INTERFACE"
         return 1
@@ -730,30 +732,30 @@ config_postfix() {
 		return 1
 	fi
 
-	echo "[INFO] Đang kiểm tra DNS..."
-	local HOSTNAME_IP=$(resolve_ip "${HOSTNAME}")
-	local DOMAIN_IP=$(resolve_ip "${DOMAIN}")
-	
-	if [[ -z "${HOSTNAME_IP}" ]]; then
-		echo ""
-		echo "[ERROR] Hostname ${HOSTNAME} không có bản ghi DNS hoặc không trỏ tới IP của Mail Server!"
-		echo "[INFO]  Hãy đảm bảo ${HOSTNAME} có bản ghi trỏ về IP của Mail Server này."
-		return 1
-	fi
-	
-	if [[ -z "${DOMAIN_IP}" ]]; then
-		echo ""
-		echo "[ERROR] Domain ${DOMAIN} không có bản ghi DNS hoặc không trỏ tới IP của Mail Server!"
-		echo "[INFO]  Hãy đảm bảo ${DOMAIN} có bản ghi trỏ về IP của Mail Server này."
-		return 1
-	fi
-	echo "[SUCCESS] Kiểm tra DNS thành công!"
-	echo ""
-	echo "${HOSTNAME} -> ${HOSTNAME_IP}"
-	echo "${DOMAIN} -> ${DOMAIN_IP}"
-	echo ""
-	echo "[ATTENTION] Hãy đảm bảo IP của hostname và domain trỏ về IP của Mail Server này!"
-	echo ""
+#	echo "[INFO] Đang kiểm tra DNS..."
+#	local HOSTNAME_IP=$(resolve_ip "${HOSTNAME}")
+#	local DOMAIN_IP=$(resolve_ip "${DOMAIN}")
+#	
+#	if [[ -z "${HOSTNAME_IP}" ]]; then
+#		echo ""
+#		echo "[ERROR] Hostname ${HOSTNAME} không có bản ghi DNS hoặc không trỏ tới IP của Mail Server!"
+#		echo "[INFO]  Hãy đảm bảo ${HOSTNAME} có bản ghi trỏ về IP của Mail Server này."
+#		return 1
+#	fi
+#	
+#	if [[ -z "${DOMAIN_IP}" ]]; then
+#		echo ""
+#		echo "[ERROR] Domain ${DOMAIN} không có bản ghi DNS hoặc không trỏ tới IP của Mail Server!"
+#		echo "[INFO]  Hãy đảm bảo ${DOMAIN} có bản ghi trỏ về IP của Mail Server này."
+#		return 1
+#	fi
+#	echo "[SUCCESS] Kiểm tra DNS thành công!"
+#	echo ""
+#	echo "${HOSTNAME} -> ${HOSTNAME_IP}"
+#	echo "${DOMAIN} -> ${DOMAIN_IP}"
+#	echo ""
+	echo "[ATTENTION] Chú ý đảm bảo IP của \"${HOSTNAME}\" là IP của Mail Server này!"
+#	echo ""
 	echo "[CONFIGURING] Đang cấu hình postfix..."
 	postconf -e "myhostname = ${HOSTNAME}"
 	postconf -e "mydomain = ${DOMAIN}"
@@ -768,7 +770,7 @@ config_postfix() {
 
 	systemctl enable postfix &> /dev/null
 	systemctl start postfix &> /dev/null
-	return 0
+#	return 0
 }
 
 config_dovecot() {
@@ -852,14 +854,13 @@ config_mailserver() {
 	
 	echo "[ATTENTION] Hãy đảm bảo Mail Server sử dụng IP tĩnh trước khi cấu hình Mail Server!"
 	echo ""
-	if ! config_postfix; then
-		return 1
-	fi
+
+	config_postfix
 	config_dovecot
 	config_httpd
 	restart_services
 
-	local DOMAIN=$(postconf mydomain 2>/dev/null | awk '{print $3}')
+	local DOMAIN=$(postconf myhostname 2>/dev/null | awk '{print $3}')
 	if [ -z "${DOMAIN}" ]; then
 		echo "[ERROR] Không tìm thấy domain trong Postfix!"
 		echo "[INFO]  Vui lòng cấu hình lại và chú ý các thông báo."
