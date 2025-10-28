@@ -1,3 +1,4 @@
+
 #!/bin/bash
 #Các packages cần cài đặt
 readonly PACKAGES=("bind" "bind-utils" "dovecot" "postfix" "epel-release" "squirrelmail")
@@ -905,7 +906,7 @@ create_user() {
 		fi
 		break
 	done
-	echo "${USERNAME}:${PASSWD}" | chpasswd
+	echo "${USERNAME}:${PASSWORD}" | chpasswd
 	echo "User ${USERNAME} đã được tạo thành công!"
 }
 
