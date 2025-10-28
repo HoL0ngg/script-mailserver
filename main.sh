@@ -125,6 +125,7 @@ EOF
 
     sudo chown root:named /etc/named.conf
     sudo chmod 644 /etc/named.conf
+    systemctl restart named
     log "named.conf đã được tạo xong với listen-on: 127.0.0.1, $IP_ADDR và allow-query: $NETWORK/$PREFIX"
 }
 
@@ -141,6 +142,7 @@ setup_dns_server() {
 	sudo systemctl enable named
 	sudo systemctl start named
 	
+	systemctl restart named
 	success "Cài đặt DNS server hoàn tất! Bạn có thể tiến hành tạo zone."
   echo
 }
@@ -252,6 +254,7 @@ EOF
       success "PTR record $IP → $PTR_NAME đã được thêm."
   fi
 
+  systemctl restart named
   # Reload reverse zone
   rndc reload $REV_ZONE &>/dev/null || rndc reload &> /dev/null
 }
@@ -292,7 +295,41 @@ add_dns_record() {
   DOMAIN="${FORWARD_ZONES[$((ZONE_INDEX-1))]}"
   FORWARD_ZONE_FILE="$ZONE_DIR/forward.${DOMAIN}"
 
-  echo "Bạn đang thêm record cho zone: $DOMAIN"
+  while true; do
+	clear
+	echo "Bạn đang thêm record cho zone: $DOMAIN"
+	echo "Chọn loại record muốn thêm:"
+	echo "1) A"
+	echo "2) MX"
+	echo "0) Thoát."
+	read -p "Nhập lựa chọn: " choice
+	case "$choice" in
+		1)
+			add_record_A "${DOMAIN}" "${FORWARD_ZONE_FILE}"
+			pause
+			;;
+		2)
+			add_record_MX "${DOMAIN}" "${FORWARD_ZONE_FILE}"
+			pause
+			;;
+		0)	
+			return
+			;;
+		*)
+			echo "[ERROR] Vui lòng chọn 0-2."
+			pause2
+			;;
+	esac
+  done
+  systemctl restart named
+# Reload forward zone luôn
+  rndc reload $DOMAIN &> /dev/null
+  pause
+}
+
+add_record_A() {
+  local DOMAIN=$1
+  local FORWARD_ZONE_FILE=$2
   read -p "Nhập hostname (VD: www, để trống = domain chính): " HOST
   read -p "Nhập IP cho ${HOST:+$HOST.}$DOMAIN: " IP
   while ! validate_ip "$IP"; do
@@ -311,14 +348,43 @@ add_dns_record() {
 
   # Kiểm tra & gợi ý tạo reverse zone
   create_reverse_zone_if_needed "$IP" "$DOMAIN" "$HOST"
-# Reload forward zone luôn
-  rndc reload $DOMAIN &> /dev/null
-
-
-
-  pause
+  systemctl restart named
 }
 
+add_record_MX() {
+	local DOMAIN=$1
+	local FORWARD_ZONE_FILE=$2
+	read -p "Nhập hostname cho Mail Server (VD: mail.example.com): " mail_server_FQDN
+	if [[ -z "${mail_server_FQDN}" ]]; then
+		echo "[ERROR] Hostname Không được để trống!"
+		return 1
+	fi
+	if ! validate_domain "${mail_server_FQDN}"; then
+		echo "[ERROR] hostname không hợp lệ!"
+		echo "[INFO]  hostname phải theo định dạng (VD: mail.example.com)"
+		return 1
+	fi
+	
+	if [[ "${mail_server_FQDN}" == "${DOMAIN}" ]]; then
+		echo "[ERROR] Hostname không được trùng với tên miền ${DOMAIN}!"
+		return 1
+	fi
+	
+	if [[ ! "${mail_server_FQDN}" =~ \.$ ]]; then
+		mail_server_FQDN="${mail_server_FQDN}."
+	fi
+
+	read -p "Nhập mức ưu tiên cho \"${mail_server_FQDN}\" (Số càng nhỏ, ưu tiên càng cao): " priority_number
+	if [[ ! "${priority_number}" =~ ^[0-9]+$ ]]; then
+		echo "[ERROR] Mức ưu tiên phải là số nguyên không âm!"
+		return 1
+	fi
+	
+	echo "@	IN	MX	${priority_number} ${mail_server_FQDN}" >> "${FORWARD_ZONE_FILE}"
+	echo " Đã thêm MX record: ${DOMAIN} → 10 ${mail_server_FQDN}"
+	systemctl restart named
+	return 0
+}
 
 list_zones() {
     clear
@@ -517,10 +583,11 @@ show_menu_setup_dns() {
 	echo "==================== MENU_CẤU_HÌNH_DNS ===================="
 	echo -e "1) Cài đặt và cấu hình DNS Server."
 	echo -e "2) Tạo Forward Zone mới."
-	echo -e "3) Kiểm tra trạng thái DNS."
-	echo -e "4) Xem danh sách Zones."
-	echo -e "5) Xem Records của Zone."
-	echo -e "6) Thêm địa chỉ IP vào forwarders."
+	echo -e "3) Thêm DNS record."
+	echo -e "4) Kiểm tra trạng thái DNS."
+	echo -e "5) Xem danh sách Zones."
+	echo -e "6) Xem Records của Zone."
+	echo -e "7) Thêm địa chỉ IP vào forwarders."
 	echo -e "0) Thoát."
 	echo "==========================================================="
 }
@@ -541,10 +608,11 @@ menu_setup_dns() {
 		case $choice in
 			1) setup_dns_server ; pause2 ;;
 			2) create_forward_zone ; pause2 ;;
-			3) systemctl status named --no-pager ; pause2 ;;
-			4) list_zones ; pause2 ;;
-			5) list_records ; pause2 ;;
-			6) add_forwarder ; pause2 ;;
+			3) add_dns_record ;;
+			4) systemctl status named --no-pager ; pause2 ;;
+			5) list_zones ; pause2 ;;
+			6) list_records ; pause2 ;;
+			7) add_forwarder ; pause2 ;;
 			0) break ;;
 			*) error "Lựa chọn không hợp lệ!"; pause2 ;;
 		esac
@@ -698,13 +766,12 @@ resolve_ip() {
 
 # Hàm kiểm tra domain hợp lệ
 validate_domain() {
-    local DOMAIN="$1"
-
-    if [[ "${DOMAIN}" =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; then
-        return 0
-    else
-        return 1
-    fi
+	local DOMAIN="$1"
+	if [[ "${DOMAIN}" =~ ^([a-zA-Z0-9-]{1,63}\.)+[a-zA-Z0-9-]{2,63}$ ]] && [[ ! "$DOMAIN" =~ [^a-zA-Z0-9.-] ]] && [[ ! "$DOMAIN" =~ ^-.* ]] && [[ ! "$DOMAIN" =~ .*-\. ]]; then
+		return 0
+	else
+		return 1
+	fi
 }
 
 config_squirrelmail() {
@@ -719,7 +786,7 @@ config_postfix() {
 	readonly POSTFIX_FILE
 	backup_file "${POSTFIX_FILE}"
 	
-	read -rp "Nhập hostname (VD: server.example.com): " HOSTNAME
+	read -rp "Nhập hostname của mail server (VD: server.example.com): " HOSTNAME
 	if ! validate_domain "${HOSTNAME}"; then
 		echo "[ERROR] hostname không hợp lệ!"
 		echo "[INFO]  hostname phải theo định dạng (VD: server.example.com)"
