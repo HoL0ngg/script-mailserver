@@ -767,7 +767,7 @@ resolve_ip() {
 # Hàm kiểm tra domain hợp lệ
 validate_domain() {
 	local DOMAIN="$1"
-	if [[ "${DOMAIN}" =~ ^([a-zA-Z0-9-]{1,63}\.)+[a-zA-Z0-9-]{2,63}$ ]] && [[ ! "$DOMAIN" =~ [^a-zA-Z0-9.-] ]] && [[ ! "$DOMAIN" =~ ^-.* ]] && [[ ! "$DOMAIN" =~ .*-\. ]]; then
+	if [[ "$DOMAIN" =~ ^([a-zA-Z0-9-]{1,63}\.)+[a-zA-Z0-9-]{2,63}$ ]] && [[ ! "$DOMAIN" =~ [^a-zA-Z0-9.-] ]] && [[ ! "$DOMAIN" =~ ^-.* ]] && [[ ! "$DOMAIN" =~ .*-\. ]]; then
 		return 0
 	else
 		return 1
@@ -775,10 +775,16 @@ validate_domain() {
 }
 
 config_squirrelmail() {
+	echo "[CONFIGURING] Đang cấu hình squirrelmail..."
+	yum -y remove sendmail &> /dev/null
 	local DOMAIN=$1
 	local CONFIG_FILE="/etc/squirrelmail/config.php"
 	readonly CONFIG_FILE DOMAIN
 	sed -i "s|^\$domain\s*=.*|\$domain = \'${DOMAIN}\';|" "${CONFIG_FILE}"
+	
+	local CONF_PL="/usr/share/squirrelmail/config/conf.pl"
+	readonly CONF_PL
+	printf "2\n3\n2\nS\nY\nQ" | "${CONF_PL}" &> /dev/null
 }
 
 config_postfix() {
@@ -786,10 +792,10 @@ config_postfix() {
 	readonly POSTFIX_FILE
 	backup_file "${POSTFIX_FILE}"
 	
-	read -rp "Nhập hostname của mail server (VD: server.example.com): " HOSTNAME
+	read -rp "Nhập hostname của mail server (VD: mail.example.com): " HOSTNAME
 	if ! validate_domain "${HOSTNAME}"; then
 		echo "[ERROR] hostname không hợp lệ!"
-		echo "[INFO]  hostname phải theo định dạng (VD: server.example.com)"
+		echo "[INFO]  hostname phải theo định dạng (VD: mail.example.com)"
 		return 1
 	fi
 
@@ -831,7 +837,7 @@ config_postfix() {
 	postconf -e "inet_interfaces = all"
 	postconf -e "inet_protocols = all"
 	postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
-	postconf -e "mynetworks = 192.168.1.0/24, 127.0.0.0/8"
+	postconf -e "mynetworks = 192.168.1.0/24, 127.0.0.0/8, [::1]/128"
 	postconf -e "home_mailbox = Maildir/"
 
 	config_squirrelmail "${DOMAIN}"
@@ -923,7 +929,9 @@ config_mailserver() {
 	echo "[ATTENTION] Hãy đảm bảo Mail Server sử dụng IP tĩnh trước khi cấu hình Mail Server!"
 	echo ""
 
-	config_postfix
+	if ! config_postfix; then
+		return 1
+	fi
 	config_dovecot
 	config_httpd
 	restart_services
@@ -963,7 +971,7 @@ create_user() {
 	
 	
 	while true; do
-		read -rsp "Nhập mật khẩu cho user: " PASSWORD
+		read -rsp "Nhập mật khẩu cho ${USERNAME}: " PASSWORD
 		echo
 		read -rsp "Xác nhận mật khẩu: " PASSWORD2
 		echo
@@ -986,6 +994,7 @@ menu_main() {
 	fi
 
 	sed -i "s|^SELINUX[[:space:]]*=.*|SELINUX=disabled|" "/etc/sysconfig/selinux"
+	nmcli networking on &> /dev/null
 	while true; do
 		clear
 		echo "================ MENU ================"
