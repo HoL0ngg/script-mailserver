@@ -302,7 +302,7 @@ add_dns_record() {
 	echo "1) A"
 	echo "2) MX"
 	echo "0) Thoát."
-	read -p "Nhập lựa chọn: " choice
+	read -p "Nhập lựa chọn [0-2]: " choice
 	case "$choice" in
 		1)
 			add_record_A "${DOMAIN}" "${FORWARD_ZONE_FILE}"
@@ -604,7 +604,7 @@ menu_setup_dns() {
 	fi
 	while true; do
 		show_menu_setup_dns
-		read -p "Chọn chức năng [0-6]: " choice
+		read -p "Chọn chức năng [0-7]: " choice
 		case $choice in
 			1) setup_dns_server ; pause2 ;;
 			2) create_forward_zone ; pause2 ;;
@@ -776,7 +776,7 @@ validate_domain() {
 
 config_squirrelmail() {
 	echo "[CONFIGURING] Đang cấu hình squirrelmail..."
-	yum -y remove sendmail &> /dev/null
+#	yum -y remove sendmail &> /dev/null
 	local DOMAIN=$1
 	local CONFIG_FILE="/etc/squirrelmail/config.php"
 	readonly CONFIG_FILE DOMAIN
