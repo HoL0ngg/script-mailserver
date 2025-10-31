@@ -671,11 +671,11 @@ install_package() {
 	local status=0
 	if ! is_installed "$pkg"; then
 		echo "[INSTALLING] Đang cài đặt $pkg..."
-		yum -y install "$pkg" &> /dev/null
+		yum -y install "$pkg" > /dev/null
 		status=$?
 		#Nếu không cài được epel-release thì phải cài qua URL trực tiếp
 		if [[ $status -ne 0 && "$pkg" == "epel-release" ]]; then
-			yum -y install "$EXTERNAL_LINK_EPEL_RELEASE" &> /dev/null
+			yum -y install "$EXTERNAL_LINK_EPEL_RELEASE" > /dev/null
 			status=$?
 		fi
 	fi
@@ -788,7 +788,7 @@ validate_domain() {
 
 config_squirrelmail() {
 	echo "[CONFIGURING] Đang cấu hình squirrelmail..."
-	yum -y remove sendmail &> /dev/null
+#	yum -y remove sendmail > /dev/null
 	local DOMAIN=$1
 	local CONFIG_FILE="/etc/squirrelmail/config.php"
 	readonly CONFIG_FILE DOMAIN
