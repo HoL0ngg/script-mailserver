@@ -709,7 +709,7 @@ menu_install() {
 	while true; do
 		clear
 		echo "============ MENU_CÀI_ĐẶT ============"
-		echo "1) Kiểm tra các gói tin."
+		echo "1) Kiểm tra trạng thái cài đặt các gói tin."
 		echo "2) Cài đặt các gói tin."
 		echo "0) Thoát cài đặt."
 		echo "======================================"
@@ -837,14 +837,14 @@ config_postfix() {
 	postconf -e "inet_interfaces = all"
 	postconf -e "inet_protocols = all"
 	postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
-	postconf -e "mynetworks = 192.168.1.0/24, 127.0.0.0/8, [::1]/128"
+	postconf -e "mynetworks = 0.0.0.0/0, 127.0.0.0/8, [::1]/128"
 	postconf -e "home_mailbox = Maildir/"
 
 	config_squirrelmail "${DOMAIN}"
 
 	systemctl enable postfix &> /dev/null
 	systemctl start postfix &> /dev/null
-#	return 0
+	return 0
 }
 
 config_dovecot() {
