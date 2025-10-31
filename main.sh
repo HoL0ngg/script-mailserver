@@ -76,12 +76,20 @@ configure_ip_and_named() {
 
     # Nhập thông tin IP tĩnh
     read -p "Nhập địa chỉ IP tĩnh (mặc định: 192.168.1.1): " IP_ADDR
+	if ! validate_ip "${IP_ADDR}"; then
+		echo "[ERROR] Địa chỉ IP không hợp lệ!"
+		return 1
+	fi
     IP_ADDR=${IP_ADDR:-192.168.1.1}
 
     read -p "Nhập Subnet Mask (mặc định: 255.255.255.0): " NETMASK
     NETMASK=${NETMASK:-255.255.255.0}
 
     read -p "Nhập Gateway (mặc định: 192.168.1.1): " GATEWAY
+	if ! validate_ip "${GATEWAY}"; then
+		echo "[ERROR] Địa chỉ IP không hợp lệ!"
+		return 1
+	fi
     GATEWAY=${GATEWAY:-192.168.1.1}
 
     PREFIX=$(ipcalc -p $IP_ADDR $NETMASK | cut -d= -f2)
@@ -127,6 +135,7 @@ EOF
     sudo chmod 644 /etc/named.conf
     systemctl restart named
     log "named.conf đã được tạo xong với listen-on: 127.0.0.1, $IP_ADDR và allow-query: $NETWORK/$PREFIX"
+	return 0
 }
 
 
@@ -136,7 +145,9 @@ setup_dns_server() {
 	firewall-cmd --permanent --zone=public --add-service=dns > /dev/null 2>&1
 	firewall-cmd --reload > /dev/null 2>&1
 		
-	configure_ip_and_named
+	if ! configure_ip_and_named; then
+		return 1
+	fi
 	
 	# Start and enable named service
 	sudo systemctl enable named
@@ -145,6 +156,7 @@ setup_dns_server() {
 	systemctl restart named
 	success "Cài đặt DNS server hoàn tất! Bạn có thể tiến hành tạo zone."
   echo
+  return 0
 }
 
 # ========== Zone & Record ==========
@@ -340,10 +352,10 @@ add_record_A() {
   # Thêm record A vào forward zone
   if [ -z "$HOST" ]; then
       echo "@   IN  A   $IP" >> "$FORWARD_ZONE_FILE"
-      echo " Đã thêm record: $DOMAIN → $IP"
+      success "Đã thêm record: $DOMAIN → $IP"
   else
       echo "${HOST}   IN  A   $IP" >> "$FORWARD_ZONE_FILE"
-      echo " Đã thêm record: ${HOST}.${DOMAIN} → $IP"
+      success "Đã thêm record: ${HOST}.${DOMAIN} → $IP"
   fi
 
   # Kiểm tra & gợi ý tạo reverse zone
@@ -381,7 +393,7 @@ add_record_MX() {
 	fi
 	
 	echo "@	IN	MX	${priority_number} ${mail_server_FQDN}" >> "${FORWARD_ZONE_FILE}"
-	echo " Đã thêm MX record: ${DOMAIN} → 10 ${mail_server_FQDN}"
+	success "Đã thêm MX record: ${DOMAIN} → 10 ${mail_server_FQDN}"
 	systemctl restart named
 	return 0
 }
@@ -776,7 +788,7 @@ validate_domain() {
 
 config_squirrelmail() {
 	echo "[CONFIGURING] Đang cấu hình squirrelmail..."
-#	yum -y remove sendmail &> /dev/null
+	yum -y remove sendmail &> /dev/null
 	local DOMAIN=$1
 	local CONFIG_FILE="/etc/squirrelmail/config.php"
 	readonly CONFIG_FILE DOMAIN
