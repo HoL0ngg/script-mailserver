@@ -33,7 +33,7 @@ touch main.sh
 chmod +x main.sh
 ```
 
-### 3. Truy cập vào Repository
+### 3. Truy cập vào [Repository](https://github.com/HoL0ngg/script-mailserver.git)
 
 Truy cập repository chứa script cấu hình mail server.
 
