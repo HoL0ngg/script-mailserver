@@ -57,19 +57,29 @@ su
 ### 🔹 Bước 1: Cài đặt các gói tin
 
 1.1. Cấu hình **network adapter** là **NAT** và cấu hình **IP sử dụng DHCP** để có thể truy cập Internet.
+
 ![NetworkAdapter NAT](images/2.png)
+
 1.2. Chọn **chức năng 1. Cài đặt** để vào menu cài đặt.
+
 ![Install menu](images/3.png)
+
 1.3. Chọn **chức năng 2. Cài đặt các gói tin** để bắt đầu cài đặt các gói cần thiết.
+
 ![Install Process](images/install.png)
+
 1.4. Sau khi cài đặt thành công, hãy cấu hình **network adapter sang Host-Only**.
+
 ![Main menu](images/4.png)
+
 ---
 
 ### 🔹 Bước 2: Cấu hình DNS Server
 
 2.1. Chọn **chức năng 2. Cấu hình DNS Server** để vào menu cấu hình DNS.
+
 ![DNS config menu](images/5.png)
+
 2.2. Chọn **chức năng 1. Cài đặt và cấu hình DNS Server.**
 Nhập các thông tin mạng để cấu hình IP tĩnh:
 
@@ -79,6 +89,7 @@ Subnet mask: 255.255.255.0
 Gateway: 192.168.1.55
 ```
 ![DNS SERVER IP](images/6.png)
+
 2.3. Chọn **chức năng 2. Tạo Forward Zone mới**
 Nhập thông tin zone:
 
@@ -87,8 +98,11 @@ Tên miền: ongbau.vn
 Địa chỉ IP: 192.168.1.55
 ```
 ![DNS forward zone](images/7.png)
+
 2.4. Chọn **chức năng 3. Thêm DNS Record** và nhập số thứ tự zone muốn thêm.
+
 ![DNS select zone](images/8.png)
+
 * Chọn **1** để thêm record A:
 
 ```
@@ -96,6 +110,7 @@ Hostname: mail
 Địa chỉ IP: 192.168.1.55
 ```
 ![DNS add record A](images/9.png)
+
 * Chọn **2** để thêm record MX:
 
 ```
@@ -103,6 +118,7 @@ Hostname: mail.ongbau.vn
 Mức độ ưu tiên: 10
 ```
 ![DNS add record MX](images/10.png)
+
 2.5. Nếu muốn gửi/nhận mail giữa **hai tên miền khác nhau**, cần cấu hình **forwarders** cho cả hai DNS Server:
 
 Ví dụ:
@@ -113,10 +129,15 @@ DNS Server: it.net (192.168.1.95)
 ```
 
 Trên DNS Server **ongbau.vn** và **it.net**, chọn **chức năng 7. Thêm địa chỉ IP vào forwarder** rồi nhập IP tương ứng.
-**ongbau.vn**
+
+**DNS Server: ongbau.vn**
+
 ![DNS server ongbau.vn forwarder](images/forwarder1.png)
-**it.net**
+
+**DNS Server: it.net**
+
 ![DNS server it.net forwarder](images/forwarder2.png)
+
 ---
 
 ### 🔹 Bước 3: Cấu hình Mail Server
@@ -128,7 +149,9 @@ Nhập thông tin:
 Hostname: mail.ongbau.vn
 Tên miền: ongbau.vn
 ```
+
 ![Mail Server configure](images/11.png)
+
 ---
 
 ### 🔹 Bước 4: Tạo tài khoản người dùng
@@ -151,7 +174,9 @@ Password: <mật khẩu>
 *(ví dụ: mail.ongbau.vn/webmail)*
 ```
 5.3. Nhập **username** và **password** đã tạo ở Bước 4 để đăng nhập và bắt đầu gửi/nhận mail.
+
 ![Webmail](images/12.png)
+
 ---
 
 ## 🎯 Kết luận
